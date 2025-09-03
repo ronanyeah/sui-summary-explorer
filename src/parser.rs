@@ -138,9 +138,16 @@ fn parse_packages(
             .context("Invalid package directory name")?;
 
         let package_symbol = Symbol::from(package_name);
-        let package_address = address_mapping
-            .get(&package_symbol)
-            .context("Package symbol not found in address_mapping.json")?;
+
+        let pkg_read = address_mapping.get(&package_symbol);
+
+        let Some(package_address) = pkg_read else {
+            println!(
+                "Ignoring package '{}' - symbol not found in address_mapping.json",
+                package_symbol
+            );
+            continue;
+        };
 
         // Parse all modules in this package directory
         let modules = parse_modules_in_package(&path)
