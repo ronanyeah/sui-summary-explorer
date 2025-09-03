@@ -484,6 +484,61 @@ fn build_struct_signature(def_name: &Symbol, struct_def: &move_model_2::summary:
     signature
 }
 
+fn build_enum_signature(def_name: &Symbol, enum_def: &move_model_2::summary::Enum) -> String {
+    let mut signature = String::new();
+    signature.push_str("enum ");
+    signature.push_str(&def_name.to_string());
+
+    // Add type parameters if any
+    if !enum_def.type_parameters.is_empty() {
+        signature.push('<');
+        for (i, tparam) in enum_def.type_parameters.iter().enumerate() {
+            if i > 0 {
+                signature.push_str(", ");
+            }
+            signature.push_str(&tparam.tparam.name.unwrap());
+        }
+        signature.push('>');
+    }
+
+    // Add variants
+    signature.push_str(" {\n");
+    for (variant_name, variant) in &enum_def.variants {
+        signature.push_str(&format!("    {}", variant_name));
+
+        // Add variant fields if any
+        if !variant.fields.fields.is_empty() {
+            if variant.fields.positional_fields {
+                // Positional fields: Variant(type1, type2, ...)
+                signature.push('(');
+                let field_types: Vec<String> = variant
+                    .fields
+                    .fields
+                    .values()
+                    .map(|field| type_to_string(&field.type_))
+                    .collect();
+                signature.push_str(&field_types.join(", "));
+                signature.push(')');
+            } else {
+                // Named fields: Variant { name1: type1, name2: type2, ... }
+                signature.push_str(" { ");
+                let field_strs: Vec<String> = variant
+                    .fields
+                    .fields
+                    .iter()
+                    .map(|(name, field)| format!("{}: {}", name, type_to_string(&field.type_)))
+                    .collect();
+                signature.push_str(&field_strs.join(", "));
+                signature.push_str(" }");
+            }
+        }
+        signature.push_str(",\n");
+    }
+    signature.push('}');
+
+    signature
+}
+
 fn serialize_definition(
     module: &move_model_2::summary::Module,
     def_type: &DefType,
@@ -512,8 +567,10 @@ fn serialize_definition(
         }
         DefType::Enum => {
             if let Some(enum_def) = module.enums.get(def_name) {
-                serde_json::to_string_pretty(enum_def)
-                    .unwrap_or_else(|_| "Error serializing enum".to_string())
+                let signature = build_enum_signature(def_name, enum_def);
+                let json_val = serde_json::to_string_pretty(enum_def)
+                    .unwrap_or_else(|_| "Error serializing enum".to_string());
+                format!("{}\n\n{}", signature, json_val)
             } else {
                 "Enum not found".to_string()
             }
