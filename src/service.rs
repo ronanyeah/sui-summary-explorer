@@ -1,5 +1,5 @@
 use rmcp::{
-    handler::server::tool::{Parameters, ToolRouter},
+    handler::server::{tool::ToolRouter, wrapper::Parameters},
     model::{
         CallToolResult, Content, Implementation, InitializeRequestParam, InitializeResult,
         ProtocolVersion, ServerCapabilities, ServerInfo,
