@@ -453,6 +453,37 @@ fn build_function_signature(
     signature
 }
 
+fn build_struct_signature(def_name: &Symbol, struct_def: &move_model_2::summary::Struct) -> String {
+    let mut signature = String::new();
+    signature.push_str("struct ");
+    signature.push_str(&def_name.to_string());
+
+    // Add type parameters if any
+    if !struct_def.type_parameters.is_empty() {
+        signature.push('<');
+        for (i, tparam) in struct_def.type_parameters.iter().enumerate() {
+            if i > 0 {
+                signature.push_str(", ");
+            }
+            signature.push_str(&tparam.tparam.name.unwrap());
+        }
+        signature.push('>');
+    }
+
+    // Add fields
+    signature.push_str(" {\n");
+    for (field_name, field) in &struct_def.fields.fields {
+        signature.push_str(&format!(
+            "    {}: {},\n",
+            field_name,
+            type_to_string(&field.type_)
+        ));
+    }
+    signature.push('}');
+
+    signature
+}
+
 fn serialize_definition(
     module: &move_model_2::summary::Module,
     def_type: &DefType,
@@ -471,8 +502,10 @@ fn serialize_definition(
         }
         DefType::Struct => {
             if let Some(struct_def) = module.structs.get(def_name) {
-                serde_json::to_string_pretty(struct_def)
-                    .unwrap_or_else(|_| "Error serializing struct".to_string())
+                let signature = build_struct_signature(def_name, struct_def);
+                let json_val = serde_json::to_string_pretty(struct_def)
+                    .unwrap_or_else(|_| "Error serializing struct".to_string());
+                format!("{}\n\n{}", signature, json_val)
             } else {
                 "Struct not found".to_string()
             }
