@@ -4,7 +4,7 @@ use iced::{
     Background, Color, Element, Length, Subscription, Task,
 };
 use move_core_types::account_address::AccountAddress;
-use move_model_2::summary::Package;
+use move_model_2::summary::{Package, Type};
 use move_symbol_pool::symbol::Symbol;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -364,7 +364,7 @@ fn build_json_column(state: &State) -> Element<Message> {
                     column![
                         text("Definition JSON").size(16),
                         scrollable(
-                            container(text(json_string).size(12))
+                            container(text(json_string).size(16))
                                 .padding(5)
                                 .width(Length::Fill)
                         )
@@ -388,6 +388,71 @@ fn build_json_column(state: &State) -> Element<Message> {
     content.width(Length::FillPortion(1)).spacing(5).into()
 }
 
+fn format_param(param: &move_model_2::summary::Parameter) -> Option<String> {
+    // hack: Parameter fields are private
+    let hack = serde_json::to_value(param).ok()?;
+    let name = hack.get("name")?.as_str()?;
+    let type_attr = hack.get("type_")?;
+    let tpp: move_model_2::summary::Type = serde_json::from_value(type_attr.clone()).ok()?;
+    let v = type_to_string(&tpp);
+    Some(format!("{}: {}", name, v))
+}
+
+fn build_function_signature(
+    def_name: &Symbol,
+    function: &move_model_2::summary::Function,
+) -> String {
+    let mut signature = String::new();
+    signature.push_str("fun ");
+    signature.push_str(&def_name.to_string());
+
+    // Add type parameters if any
+    if !function.type_parameters.is_empty() {
+        signature.push('<');
+        for (i, tparam) in function.type_parameters.iter().enumerate() {
+            if i > 0 {
+                signature.push_str(", ");
+            }
+            signature.push_str(&tparam.name.unwrap());
+        }
+        signature.push('>');
+    }
+
+    // Add parameters
+    signature.push('(');
+    for (i, param) in function.parameters.iter().enumerate() {
+        if i > 0 {
+            signature.push_str(",\n    ");
+        } else {
+            signature.push_str("\n    ");
+        }
+        signature.push_str(&format_param(param).unwrap());
+    }
+    if !function.parameters.is_empty() {
+        signature.push_str(",\n");
+    }
+    signature.push(')');
+
+    // Add return type if any
+    if !function.return_.is_empty() {
+        signature.push_str(": ");
+        if function.return_.len() == 1 {
+            signature.push_str(&type_to_string(&function.return_[0]));
+        } else {
+            signature.push('(');
+            for (i, ret_type) in function.return_.iter().enumerate() {
+                if i > 0 {
+                    signature.push_str(", ");
+                }
+                signature.push_str(&type_to_string(&ret_type));
+            }
+            signature.push(')');
+        }
+    }
+
+    signature
+}
+
 fn serialize_definition(
     module: &move_model_2::summary::Module,
     def_type: &DefType,
@@ -396,8 +461,10 @@ fn serialize_definition(
     match def_type {
         DefType::Function => {
             if let Some(function) = module.functions.get(def_name) {
-                serde_json::to_string_pretty(function)
-                    .unwrap_or_else(|_| "Error serializing function".to_string())
+                let signature = build_function_signature(def_name, function);
+                let json_val = serde_json::to_string_pretty(function)
+                    .unwrap_or_else(|_| "Error serializing function".to_string());
+                format!("{}\n\n{}", signature, json_val)
             } else {
                 "Function not found".to_string()
             }
@@ -653,4 +720,52 @@ fn build_search_view(state: &State) -> Element<Message> {
     .width(Length::Fill)
     .height(Length::Fill)
     .into()
+}
+
+pub fn type_to_string(t: &Type) -> String {
+    match t {
+        Type::Bool => "bool".to_string(),
+        Type::U8 => "u8".to_string(),
+        Type::U16 => "u16".to_string(),
+        Type::U32 => "u32".to_string(),
+        Type::U64 => "u64".to_string(),
+        Type::U128 => "u128".to_string(),
+        Type::U256 => "u256".to_string(),
+        Type::Address => "address".to_string(),
+        Type::Signer => "signer".to_string(),
+        Type::Datatype(dt) => {
+            let args: Vec<String> = dt
+                .type_arguments
+                .iter()
+                .map(|arg| {
+                    //let phantom = if arg.phantom { "phantom " } else { "" };
+                    //format!("{}{}", phantom, type_to_string(&arg.argument))
+
+                    type_to_string(&arg.argument)
+                })
+                .collect();
+            let args_str = if args.is_empty() {
+                "".to_string()
+            } else {
+                format!("<{}>", args.join(", "))
+            };
+            format!("{}{}", dt.name, args_str)
+        }
+        Type::Vector(inner) => format!("vector<{}>", type_to_string(inner)),
+        Type::Reference(is_mut, inner) => {
+            let mut_str = if *is_mut { "mut " } else { "" };
+            format!("&{}{}", mut_str, type_to_string(inner))
+        }
+        Type::TypeParameter(idx) => format!("T{}", idx),
+        Type::NamedTypeParameter(sym) => sym.to_string(),
+        Type::Tuple(types) => {
+            let type_strs: Vec<String> = types.iter().map(|t| type_to_string(t)).collect();
+            format!("({})", type_strs.join(", "))
+        }
+        Type::Fun(args, ret) => {
+            let arg_strs: Vec<String> = args.iter().map(|t| type_to_string(t)).collect();
+            format!("fun({}) -> {}", arg_strs.join(", "), type_to_string(ret))
+        }
+        Type::Any => "_".to_string(),
+    }
 }
