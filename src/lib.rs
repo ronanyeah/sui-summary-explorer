@@ -1,3 +1,4 @@
+pub mod gui;
 pub mod parser;
 pub mod service;
 
