@@ -1,6 +1,8 @@
 use clap::Parser;
 use iced::{
-    widget::{button, checkbox, column, container, row, scrollable, text, text_input},
+    widget::{
+        button, checkbox, column, container, horizontal_space, row, scrollable, text, text_input,
+    },
     Alignment, Background, Color, Element, Length, Subscription, Task,
 };
 use move_core_types::account_address::AccountAddress;
@@ -21,6 +23,7 @@ enum Message {
     TogglePublicOnly(bool),
     SelectFromSearch(AccountAddress, Symbol, Option<(DefType, Symbol)>),
     PickFolder,
+    ClearPackages,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -144,10 +147,17 @@ fn view(state: &State) -> Element<'_, Message> {
             .style(default_button_style)
     };
 
+    let clear_button = button("Clear").on_press(Message::ClearPackages);
+
     let public_only_checkbox =
         checkbox("public only", state.public_only).on_toggle(Message::TogglePublicOnly);
 
-    let view_buttons = row![explorer_button, search_button, public_only_checkbox].spacing(5);
+    let view_buttons = row![
+        row![explorer_button, search_button, public_only_checkbox].spacing(10),
+        horizontal_space(),
+        clear_button,
+    ]
+    .width(Length::Fill);
 
     let main_content: Element<Message> = match state.view {
         View::Explorer => {
@@ -168,7 +178,8 @@ fn view(state: &State) -> Element<'_, Message> {
         View::Search => build_search_view(state),
     };
 
-    container(column![view_buttons, main_content].spacing(10))
+    column![view_buttons, main_content]
+        .spacing(10)
         .padding(10)
         .width(Length::Fill)
         .height(Length::Fill)
@@ -186,7 +197,7 @@ fn build_packages_column(state: &State) -> Element<'_, Message> {
     let package_buttons: Vec<_> = state
         .packages
         .as_ref()
-        .unwrap()
+        .expect("state.packages == None")
         .iter()
         .filter_map(|(addr, pkg)| {
             pkg.name.as_ref().map(|name| {
@@ -413,14 +424,17 @@ fn build_json_column(state: &State) -> Element<'_, Message> {
     content.width(Length::FillPortion(1)).spacing(5).into()
 }
 
-fn format_param(param: &move_model_2::summary::Parameter) -> Option<String> {
+fn format_param(param: &move_model_2::summary::Parameter) -> String {
     // hack: Parameter fields are private
-    let hack = serde_json::to_value(param).ok()?;
-    let name = hack.get("name")?.as_str()?;
-    let type_attr = hack.get("type_")?;
-    let tpp: move_model_2::summary::Type = serde_json::from_value(type_attr.clone()).ok()?;
-    let v = type_to_string(&tpp);
-    Some(format!("{}: {}", name, v))
+    let (name, v) = (|| -> Option<(String, String)> {
+        let hack = serde_json::to_value(param).ok()?;
+        let name = hack.get("name")?.as_str()?;
+        let type_attr = hack.get("type_")?;
+        let tpp: move_model_2::summary::Type = serde_json::from_value(type_attr.clone()).ok()?;
+        Some((name.to_string(), type_to_string(&tpp)))
+    })()
+    .expect("failed to parse Parameter");
+    format!("{}: {}", name, v)
 }
 
 fn build_function_signature(
@@ -438,7 +452,7 @@ fn build_function_signature(
             if i > 0 {
                 signature.push_str(", ");
             }
-            signature.push_str(&tparam.name.unwrap());
+            signature.push_str(&tparam.name.expect("tparam.name not found"));
         }
         signature.push('>');
     }
@@ -451,7 +465,7 @@ fn build_function_signature(
         } else {
             signature.push_str("\n    ");
         }
-        signature.push_str(&format_param(param).unwrap());
+        signature.push_str(&format_param(param));
     }
     if !function.parameters.is_empty() {
         signature.push_str(",\n");
@@ -490,7 +504,7 @@ fn build_struct_signature(def_name: &Symbol, struct_def: &move_model_2::summary:
             if i > 0 {
                 signature.push_str(", ");
             }
-            signature.push_str(&tparam.tparam.name.unwrap());
+            signature.push_str(&tparam.tparam.name.expect("tparam.name not found"));
         }
         signature.push('>');
     }
@@ -521,7 +535,7 @@ fn build_enum_signature(def_name: &Symbol, enum_def: &move_model_2::summary::Enu
             if i > 0 {
                 signature.push_str(", ");
             }
-            signature.push_str(&tparam.tparam.name.unwrap());
+            signature.push_str(&tparam.tparam.name.expect("tparam.name not found"));
         }
         signature.push('>');
     }
@@ -671,7 +685,7 @@ fn update(state: &mut State, message: Message) {
             }
         }
         Message::PickFolder => {
-            let current_dir = std::env::current_dir().unwrap();
+            let current_dir = std::env::current_dir().expect("current_dir not found");
             let folder = rfd::FileDialog::new()
                 .set_directory(current_dir)
                 .pick_folder();
@@ -686,6 +700,10 @@ fn update(state: &mut State, message: Message) {
                     }
                 }
             }
+        }
+        Message::ClearPackages => {
+            state.packages = None;
+            state.selection = Selection::NoSelection;
         }
     }
 }
