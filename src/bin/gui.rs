@@ -1,7 +1,7 @@
 use clap::Parser;
 use iced::{
     widget::{button, checkbox, column, container, row, scrollable, text, text_input},
-    Background, Color, Element, Length, Subscription, Task,
+    Alignment, Background, Color, Element, Length, Subscription, Task,
 };
 use move_core_types::account_address::AccountAddress;
 use move_model_2::summary::{Package, Type};
@@ -20,6 +20,7 @@ enum Message {
     ToggleSuiFilter(bool),
     TogglePublicOnly(bool),
     SelectFromSearch(AccountAddress, Symbol, Option<(DefType, Symbol)>),
+    PickFolder,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -60,7 +61,7 @@ enum SearchItem {
 
 struct State {
     selection: Selection,
-    packages: BTreeMap<AccountAddress, Package>,
+    packages: Option<BTreeMap<AccountAddress, Package>>,
     view: View,
     search_input: String,
     std_filter: bool,
@@ -70,20 +71,24 @@ struct State {
 
 #[derive(Parser)]
 struct Args {
-    #[arg(default_value = "./package_summaries")]
-    folder: String,
+    folder: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let pkg_path = std::path::Path::new(&args.folder);
-    let summary = sui_summary_explorer::parser::parse_summaries(pkg_path)?;
+    let packages = if let Some(folder) = args.folder {
+        let pkg_path = std::path::Path::new(&folder);
+        let summary = sui_summary_explorer::parser::parse_summaries(pkg_path)?;
+        Some(summary.packages)
+    } else {
+        None
+    };
 
     let init_state = State {
         selection: Selection::NoSelection,
-        packages: summary.packages,
+        packages,
         view: View::Explorer,
         search_input: String::new(),
         std_filter: false,
@@ -102,7 +107,23 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn view(state: &State) -> Element<Message> {
+fn view(state: &State) -> Element<'_, Message> {
+    if state.packages.is_none() {
+        return container(
+            column![
+                text("No package_summaries folder selected").size(24),
+                button("Select Folder").on_press(Message::PickFolder)
+            ]
+            .spacing(20)
+            .align_x(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .into();
+    }
+
     let explorer_button = if state.view == View::Explorer {
         button(text("Explorer"))
             .on_press(Message::SetView(View::Explorer))
@@ -154,7 +175,7 @@ fn view(state: &State) -> Element<Message> {
         .into()
 }
 
-fn build_packages_column(state: &State) -> Element<Message> {
+fn build_packages_column(state: &State) -> Element<'_, Message> {
     let selected_addr = match &state.selection {
         Selection::PackageSelected(addr)
         | Selection::ModuleSelected(addr, _)
@@ -164,6 +185,8 @@ fn build_packages_column(state: &State) -> Element<Message> {
 
     let package_buttons: Vec<_> = state
         .packages
+        .as_ref()
+        .unwrap()
         .iter()
         .filter_map(|(addr, pkg)| {
             pkg.name.as_ref().map(|name| {
@@ -194,7 +217,7 @@ fn build_packages_column(state: &State) -> Element<Message> {
     .into()
 }
 
-fn build_modules_column(state: &State) -> Element<Message> {
+fn build_modules_column(state: &State) -> Element<'_, Message> {
     let selected_module = match &state.selection {
         Selection::ModuleSelected(_, module_name)
         | Selection::DefinitionSelected(_, module_name, _, _) => Some(*module_name),
@@ -205,7 +228,7 @@ fn build_modules_column(state: &State) -> Element<Message> {
         Selection::PackageSelected(addr)
         | Selection::ModuleSelected(addr, _)
         | Selection::DefinitionSelected(addr, _, _, _) => {
-            if let Some(package) = state.packages.get(addr) {
+            if let Some(package) = state.packages.as_ref().and_then(|p| p.get(addr)) {
                 let module_buttons: Vec<_> = package
                     .modules
                     .keys()
@@ -243,7 +266,7 @@ fn build_modules_column(state: &State) -> Element<Message> {
     content.width(Length::FillPortion(1)).spacing(5).into()
 }
 
-fn build_definitions_column(state: &State) -> Element<Message> {
+fn build_definitions_column(state: &State) -> Element<'_, Message> {
     let selected_definition = match &state.selection {
         Selection::DefinitionSelected(_, _, def_type, def_name) => Some((*def_type, *def_name)),
         _ => None,
@@ -254,7 +277,8 @@ fn build_definitions_column(state: &State) -> Element<Message> {
         | Selection::DefinitionSelected(addr, module_name, _, _) => {
             match state
                 .packages
-                .get(addr)
+                .as_ref()
+                .and_then(|p| p.get(addr))
                 .and_then(|pkg| pkg.modules.get(module_name))
             {
                 Some(module) => {
@@ -287,7 +311,7 @@ fn build_definition_buttons(
     module: &move_model_2::summary::Module,
     selected_definition: Option<(DefType, Symbol)>,
     public_only: bool,
-) -> Vec<Element<Message>> {
+) -> Vec<Element<'_, Message>> {
     let mut buttons = Vec::new();
 
     // Add functions
@@ -351,12 +375,13 @@ fn build_definition_buttons(
     buttons
 }
 
-fn build_json_column(state: &State) -> Element<Message> {
+fn build_json_column(state: &State) -> Element<'_, Message> {
     let content = match &state.selection {
         Selection::DefinitionSelected(addr, module_name, def_type, def_name) => {
             match state
                 .packages
-                .get(addr)
+                .as_ref()
+                .and_then(|p| p.get(addr))
                 .and_then(|pkg| pkg.modules.get(module_name))
             {
                 Some(module) => {
@@ -645,6 +670,23 @@ fn update(state: &mut State, message: Message) {
                 }
             }
         }
+        Message::PickFolder => {
+            let current_dir = std::env::current_dir().unwrap();
+            let folder = rfd::FileDialog::new()
+                .set_directory(current_dir)
+                .pick_folder();
+            if let Some(path) = folder {
+                match sui_summary_explorer::parser::parse_summaries(&path) {
+                    Ok(summary) => {
+                        state.packages = Some(summary.packages);
+                        state.selection = Selection::NoSelection;
+                    }
+                    Err(_) => {
+                        // Handle error
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -667,7 +709,7 @@ fn default_button_style(_theme: &iced::Theme, _status: button::Status) -> button
     }
 }
 
-fn build_search_view(state: &State) -> Element<Message> {
+fn build_search_view(state: &State) -> Element<'_, Message> {
     let search_input = text_input("Search modules and definitions...", &state.search_input)
         .on_input(Message::SearchInputChanged)
         .padding(10)
@@ -702,65 +744,67 @@ fn build_search_view(state: &State) -> Element<Message> {
         }
     };
 
-    for (package_addr, package) in &state.packages {
-        if let Some(package_name) = &package.name {
-            if &package_name.to_string() == "sui" && !state.sui_filter {
-                continue;
-            }
-            if &package_name.to_string() == "std" && !state.std_filter {
-                continue;
-            }
-            for (module_name, module) in &package.modules {
-                if matches_search(&module_name.to_string()) {
-                    items.push(SearchItem::Module {
-                        package_addr: *package_addr,
-                        module_name: *module_name,
-                        display: format!("Module: {}.{}", package_name, module_name),
-                    });
+    if let Some(packages) = &state.packages {
+        for (package_addr, package) in packages {
+            if let Some(package_name) = &package.name {
+                if &package_name.to_string() == "sui" && !state.sui_filter {
+                    continue;
                 }
-
-                for function_name in module.functions.keys() {
-                    if matches_search(&function_name.to_string()) {
-                        items.push(SearchItem::Definition {
+                if &package_name.to_string() == "std" && !state.std_filter {
+                    continue;
+                }
+                for (module_name, module) in &package.modules {
+                    if matches_search(&module_name.to_string()) {
+                        items.push(SearchItem::Module {
                             package_addr: *package_addr,
                             module_name: *module_name,
-                            def_type: DefType::Function,
-                            def_name: *function_name,
-                            display: format!(
-                                "  Function: {}.{}.{}",
-                                package_name, module_name, function_name
-                            ),
+                            display: format!("Module: {}.{}", package_name, module_name),
                         });
                     }
-                }
 
-                for struct_name in module.structs.keys() {
-                    if matches_search(&struct_name.to_string()) {
-                        items.push(SearchItem::Definition {
-                            package_addr: *package_addr,
-                            module_name: *module_name,
-                            def_type: DefType::Struct,
-                            def_name: *struct_name,
-                            display: format!(
-                                "  Struct: {}.{}.{}",
-                                package_name, module_name, struct_name
-                            ),
-                        });
+                    for function_name in module.functions.keys() {
+                        if matches_search(&function_name.to_string()) {
+                            items.push(SearchItem::Definition {
+                                package_addr: *package_addr,
+                                module_name: *module_name,
+                                def_type: DefType::Function,
+                                def_name: *function_name,
+                                display: format!(
+                                    "  Function: {}.{}.{}",
+                                    package_name, module_name, function_name
+                                ),
+                            });
+                        }
                     }
-                }
 
-                for enum_name in module.enums.keys() {
-                    if matches_search(&enum_name.to_string()) {
-                        items.push(SearchItem::Definition {
-                            package_addr: *package_addr,
-                            module_name: *module_name,
-                            def_type: DefType::Enum,
-                            def_name: *enum_name,
-                            display: format!(
-                                "  Enum: {}.{}.{}",
-                                package_name, module_name, enum_name
-                            ),
-                        });
+                    for struct_name in module.structs.keys() {
+                        if matches_search(&struct_name.to_string()) {
+                            items.push(SearchItem::Definition {
+                                package_addr: *package_addr,
+                                module_name: *module_name,
+                                def_type: DefType::Struct,
+                                def_name: *struct_name,
+                                display: format!(
+                                    "  Struct: {}.{}.{}",
+                                    package_name, module_name, struct_name
+                                ),
+                            });
+                        }
+                    }
+
+                    for enum_name in module.enums.keys() {
+                        if matches_search(&enum_name.to_string()) {
+                            items.push(SearchItem::Definition {
+                                package_addr: *package_addr,
+                                module_name: *module_name,
+                                def_type: DefType::Enum,
+                                def_name: *enum_name,
+                                display: format!(
+                                    "  Enum: {}.{}.{}",
+                                    package_name, module_name, enum_name
+                                ),
+                            });
+                        }
                     }
                 }
             }
