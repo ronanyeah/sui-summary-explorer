@@ -7,7 +7,7 @@ edition = "2024"
 anyhow = "1.0.100"
 axum = "0.8.4"
 clap = "4.5.48"
-iced = "0.13.1"
+iced = { git = "https://github.com/iced-rs/iced.git", rev = "0a34496", features = ["advanced"] }
 move-core-types = { git = "https://github.com/MystenLabs/sui.git", rev = "ef255b3" }
 move-model-2 = { git = "https://github.com/MystenLabs/sui", rev = "ef255b3" }
 move-symbol-pool = { git = "https://github.com/MystenLabs/sui.git", rev = "ef255b3" }

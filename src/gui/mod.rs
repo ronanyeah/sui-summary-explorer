@@ -72,36 +72,40 @@ struct State {
 }
 
 pub async fn main<P: Into<std::path::PathBuf>>(folder: Option<P>) -> anyhow::Result<()> {
-    let packages = if let Some(f) = folder {
-        let path: std::path::PathBuf = f.into();
-        if path.exists() && path.is_dir() {
-            let summary = crate::parser::parse_summaries(&path)?;
-            Some(summary.packages)
-        } else {
-            eprintln!("Invalid path!");
-            None
-        }
-    } else {
-        None
-    };
+    let folder_path = folder.map(|x| -> std::path::PathBuf { x.into() });
 
-    let init_state = State {
-        selection: Selection::NoSelection,
-        packages,
-        view: View::Explorer,
-        search_input: String::new(),
-        std_filter: false,
-        sui_filter: false,
-        public_only: false,
-    };
-
-    iced::application("Sui Summary Explorer", update, view)
-        .style(move |_, _| iced::application::Appearance {
-            background_color: Color::from_rgb(0.0, 0.0, 0.0),
-            text_color: Color::from_rgb(1.0, 1.0, 1.0),
-        })
-        .subscription(subscription)
-        .run_with(|| (init_state, Task::none()))?;
+    iced::application(
+        move || {
+            let summary = folder_path.clone().and_then(|path| {
+                let res = crate::parser::parse_summaries(&path).ok();
+                if res.is_none() {
+                    eprintln!("Invalid path!");
+                }
+                res
+            });
+            (
+                State {
+                    selection: Selection::NoSelection,
+                    packages: summary.map(|s| s.packages),
+                    view: View::Explorer,
+                    search_input: String::new(),
+                    std_filter: false,
+                    sui_filter: false,
+                    public_only: false,
+                },
+                Task::none(),
+            )
+        },
+        update,
+        view,
+    )
+    .title("Sui Summary Explorer")
+    .style(move |_, _| iced::theme::Style {
+        background_color: Color::from_rgb(0.0, 0.0, 0.0),
+        text_color: Color::from_rgb(1.0, 1.0, 1.0),
+    })
+    .subscription(subscription)
+    .run()?;
 
     Ok(())
 }

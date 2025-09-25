@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use move_core_types::account_address::AccountAddress;
 use move_symbol_pool::Symbol;
 use serde::Deserialize;
@@ -11,7 +11,12 @@ const JSON_EXT: &str = "json";
 
 /// Parse summary files from a directory path and return the structures
 /// that match the output_summaries function signature.
-pub fn parse_summaries(summaries_dir: &Path) -> Result<move_model_2::summary::Packages> {
+pub fn parse_summaries<P: Into<std::path::PathBuf>>(
+    pb: P,
+) -> Result<move_model_2::summary::Packages> {
+    let bf: std::path::PathBuf = pb.into();
+    let summaries_dir = bf.as_path();
+
     // Validate directory exists
     if !summaries_dir.exists() {
         return Err(anyhow!(

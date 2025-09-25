@@ -1,12 +1,10 @@
 use iced::{
-    widget::{
-        button, checkbox, column, container, horizontal_space, row, scrollable, text, text_input,
-    },
     Alignment, Background, Color, Element, Length,
+    widget::{button, checkbox, column, container, row, rule, scrollable, space, text, text_input},
 };
 use move_symbol_pool::symbol::Symbol;
 
-use super::{type_to_string, DefType, Message, SearchItem, Selection, State, View};
+use super::{DefType, Message, SearchItem, Selection, State, View, type_to_string};
 
 pub fn view(state: &State) -> Element<'_, Message> {
     if state.packages.is_none() {
@@ -52,7 +50,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
 
     let view_buttons = row![
         row![explorer_button, search_button, public_only_checkbox].spacing(10),
-        horizontal_space(),
+        space::horizontal(),
         clear_button,
     ]
     .width(Length::Fill);
@@ -82,6 +80,24 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+fn build_column<'a>(header: &'a str, elem: Element<'a, Message>) -> Element<'a, Message> {
+    container(
+        column![
+            text(header).size(16),
+            rule::horizontal(3),
+            scrollable(elem).height(Length::Fill)
+        ]
+        .width(Length::FillPortion(1))
+        .spacing(20),
+    )
+    .style(|_| {
+        container::background(iced::Background::Color(iced::Color::from_rgb8(17, 24, 39)))
+            .border(iced::border::rounded(15))
+    })
+    .padding(15)
+    .into()
 }
 
 fn build_packages_column(state: &State) -> Element<'_, Message> {
@@ -117,13 +133,7 @@ fn build_packages_column(state: &State) -> Element<'_, Message> {
         })
         .collect();
 
-    column![
-        text("Packages").size(16),
-        scrollable(column(package_buttons).spacing(2)).height(Length::Fill)
-    ]
-    .width(Length::FillPortion(1))
-    .spacing(5)
-    .into()
+    build_column("Packages", column(package_buttons).spacing(2).into())
 }
 
 fn build_modules_column(state: &State) -> Element<'_, Message> {
@@ -159,20 +169,15 @@ fn build_modules_column(state: &State) -> Element<'_, Message> {
                     })
                     .collect();
 
-                column![
-                    text("Modules").size(16),
-                    scrollable(column(module_buttons).spacing(2)).height(Length::Fill)
-                ]
+                column(module_buttons).spacing(2).into()
             } else {
-                column![text("Modules").size(16), text("No package found").size(14)]
+                text("No package found").size(14).into()
             }
         }
-        Selection::NoSelection => {
-            column![text("Modules").size(16), text("Select a package").size(14)]
-        }
+        Selection::NoSelection => text("Select a package").size(14).into(),
     };
 
-    content.width(Length::FillPortion(1)).spacing(5).into()
+    build_column("Modules", content)
 }
 
 fn build_definitions_column(state: &State) -> Element<'_, Message> {
@@ -193,27 +198,18 @@ fn build_definitions_column(state: &State) -> Element<'_, Message> {
                 Some(module) => {
                     let definition_buttons =
                         build_definition_buttons(module, selected_definition, state.public_only);
-                    column![
-                        text("Definitions").size(16),
-                        scrollable(column(definition_buttons).spacing(2))
-                            .height(Length::Fill)
-                            .width(Length::Fill)
-                    ]
-                    .width(Length::Fill)
+                    column(definition_buttons)
+                        .spacing(2)
+                        .width(Length::Fill)
+                        .into()
                 }
-                None => column![
-                    text("Definitions").size(16),
-                    text("Module not found").size(14)
-                ],
+                None => text("Module not found").size(14).into(),
             }
         }
-        _ => column![
-            text("Definitions").size(16),
-            text("Select a module").size(14)
-        ],
+        _ => text("Select a module").size(14).into(),
     };
 
-    content.width(Length::FillPortion(1)).spacing(5).into()
+    build_column("Definitions", content)
 }
 
 fn build_definition_buttons(
@@ -226,10 +222,24 @@ fn build_definition_buttons(
     // Add functions
     module.functions.iter().for_each(|(name, fun)| {
         let is_selected = Some((DefType::Function, *name)) == selected_definition;
-        let visibility = format!("{:?}", fun.visibility);
 
-        if !public_only || visibility == "Public" {
-            let mut btn = button(text(format!("fun {} [{}]", name, visibility)))
+        // Visibility doesn't have PartialEq
+        let is_public = match fun.visibility {
+            move_model_2::summary::Visibility::Public => true,
+            _ => false,
+        };
+
+        if !public_only || is_public {
+            let visibility_txt = format!("{:?}", fun.visibility);
+            let body = row![
+                text("fun"),
+                container(text(&**name).wrapping(iced::advanced::text::Wrapping::None))
+                    .clip(true)
+                    .width(Length::Fill),
+                text(format!("[{}]", visibility_txt)),
+            ]
+            .spacing(10);
+            let mut btn = button(body)
                 .on_press(Message::SelectDefinition(DefType::Function, *name))
                 .width(Length::Fill);
 
@@ -295,31 +305,18 @@ fn build_json_column(state: &State) -> Element<'_, Message> {
             {
                 Some(module) => {
                     let json_string = serialize_definition(module, def_type, def_name);
-                    column![
-                        text("Definition JSON").size(16),
-                        scrollable(
-                            container(text(json_string).size(16))
-                                .padding(5)
-                                .width(Length::Fill)
-                        )
-                        .height(Length::Fill)
+                    container(text(json_string).size(16))
+                        .padding(5)
                         .width(Length::Fill)
-                    ]
-                    .width(Length::Fill)
+                        .into()
                 }
-                None => column![
-                    text("Definition JSON").size(16),
-                    text("Module not found").size(14)
-                ],
+                None => text("Module not found").size(14).into(),
             }
         }
-        _ => column![
-            text("Definition JSON").size(16),
-            text("Select a definition").size(14)
-        ],
+        _ => text("Select a definition").size(14).into(),
     };
 
-    content.width(Length::FillPortion(1)).spacing(5).into()
+    build_column("Definition JSON", content)
 }
 
 fn format_param(param: &move_model_2::summary::Parameter) -> String {
