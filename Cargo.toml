@@ -12,7 +12,7 @@ move-core-types = { git = "https://github.com/MystenLabs/sui.git", rev = "ef255b
 move-model-2 = { git = "https://github.com/MystenLabs/sui", rev = "ef255b3" }
 move-symbol-pool = { git = "https://github.com/MystenLabs/sui.git", rev = "ef255b3" }
 rfd = "0.15.4"
-rmcp = { version = "0.6.4", features = ["transport-worker", "transport-streamable-http-server"] }
+rmcp = { version = "0.7.0", features = ["transport-worker", "transport-streamable-http-server"] }
 serde = "1.0.226"
 serde_json = "1.0.145"
 tokio = { version = "1.47.1", features = ["full"] }
