@@ -223,13 +223,14 @@ fn build_definition_buttons(
     module.functions.iter().for_each(|(name, fun)| {
         let is_selected = Some((DefType::Function, *name)) == selected_definition;
 
-        // Visibility doesn't have PartialEq
+        // TODO: Visibility doesn't have PartialEq
         let is_public = match fun.visibility {
             move_model_2::summary::Visibility::Public => true,
             _ => false,
         };
 
         if !public_only || is_public {
+            // TODO: Visibility doesn't have Display
             let visibility_txt = format!("{:?}", fun.visibility);
             let body = row![
                 text("fun"),
@@ -320,16 +321,9 @@ fn build_json_column(state: &State) -> Element<'_, Message> {
 }
 
 fn format_param(param: &move_model_2::summary::Parameter) -> String {
-    // hack: Parameter fields are private
-    let (name, v) = (|| -> Option<(String, String)> {
-        let hack = serde_json::to_value(param).ok()?;
-        let name = hack.get("name")?.as_str()?;
-        let type_attr = hack.get("type_")?;
-        let tpp: move_model_2::summary::Type = serde_json::from_value(type_attr.clone()).ok()?;
-        Some((name.to_string(), type_to_string(&tpp)))
-    })()
-    .expect("failed to parse Parameter");
-    format!("{}: {}", name, v)
+    let name = param.name.expect("Parameter with no name");
+    let typename = type_to_string(&param.type_);
+    format!("{}: {}", name, typename)
 }
 
 fn build_function_signature(

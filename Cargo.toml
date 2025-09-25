@@ -8,9 +8,9 @@ anyhow = "1.0.100"
 axum = "0.8.4"
 clap = "4.5.48"
 iced = { git = "https://github.com/iced-rs/iced.git", rev = "0a34496", features = ["advanced"] }
-move-core-types = { git = "https://github.com/MystenLabs/sui.git", rev = "ef255b3" }
-move-model-2 = { git = "https://github.com/MystenLabs/sui", rev = "ef255b3" }
-move-symbol-pool = { git = "https://github.com/MystenLabs/sui.git", rev = "ef255b3" }
+move-core-types = { git = "https://github.com/MystenLabs/sui.git", rev = "ea30c62" }
+move-model-2 = { git = "https://github.com/MystenLabs/sui", rev = "ea30c62" }
+move-symbol-pool = { git = "https://github.com/MystenLabs/sui.git", rev = "ea30c62" }
 rfd = "0.15.4"
 rmcp = { version = "0.7.0", features = ["transport-worker", "transport-streamable-http-server"] }
 serde = "1.0.226"
